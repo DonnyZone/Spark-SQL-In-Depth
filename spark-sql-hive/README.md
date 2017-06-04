@@ -1,3 +1,7 @@
+---
+typora-root-url: components\figures
+---
+
 # Spark-SQL-Hive
 ​    Spark-SQL on Hive对于企业来讲是一个不可或缺的部分。在Spark出现之前，MapReduce生态系统中，一直是由Hive担任着SQL查询分析的重任。从软件维护角度来看，对于遗留应用的迁移，不管是语法层面的兼容还是元数据管理层面复用，Hive的影子仍将在很长时间内存在。
 
@@ -11,7 +15,7 @@ val spark = SparkSession.builder().enableHiveSupport().getOrCreate()
 
 ​    类似于Spark SQL中的SessionState类，HiveSessionState起到了主要作用，如图所示：
 
-![概述](D:\SourceTree\Spark-SQL-In-Depth\spark-sql-hive\components\figures\概述.png)
+![概述](/概述.png)
 
 
 
