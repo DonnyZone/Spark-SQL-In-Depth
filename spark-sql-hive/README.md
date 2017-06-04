@@ -11,7 +11,7 @@ val spark = SparkSession.builder().enableHiveSupport().getOrCreate()
 
 ​    类似于Spark SQL中的SessionState类，HiveSessionState起到了主要作用，如图所示：
 
-![概述](components/figures/概述.png)
+![overview](components/figures/overview.png)
 
 
 
