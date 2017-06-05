@@ -6,7 +6,8 @@ Spark-SQL on Hive对于企业来讲是一个不可或缺的部分。在Spark出�
 ```scala
 val spark = SparkSession.builder().enableHiveSupport().getOrCreate()
 ```
-
+该操作会在conf中将CATALOG_IMPLEMENTATION设置成“hive”，在后续流程中SparkSession所获取的将会是HiveSessionState(继承默认的SessionSate)。
+![overview](components/figures/submit.jpg)
 - ## 概述
 
 类似于Spark SQL中的SessionState类，HiveSessionState起到了主要作用，如图所示：
