@@ -1,1 +1,8 @@
+## 各种Catalog之间的关系
+
+在Spark-SQL连接Hive的源码中可以看到各种XXXXCatalog的踪迹。在Spark-SQL 2.1版本中，涉及到以下三个类：HiveMetastoreCatalog, HiveExternalCatalog与HiveSessionCatalog，三者的关系如图所示：
+
+![catalogs](figurs/catalogs.png)
+
+其中，HiveMetastoreCatalog在版本演化过程中遗留下来，保留了与Hive元数据的操作，例如创建数据源表；HiveExternalCatalog是用来与Hive打交道的核心类，实际的操作交给内部包含的HiveClient进行；HiveSessionCatalog内部包含了上述两个类，作为参数传递到Analyzer和SparkPlanner中，参与后续的流程。
 
