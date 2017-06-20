@@ -53,7 +53,7 @@ joinCriteria : ON booleanExpression | USING '(' identifier (',' identifier)* ')'
 
 编译器由ANTLR4自动生成，针对该SQL语句生成如下AST：
 
-![AST](C:\Users\wellfengzhu\Desktop\AST.png)
+![AST](AST.png)
 
 ### 1.3 逻辑算子树(Logical Plan)
 
@@ -80,7 +80,7 @@ joinCriteria : ON booleanExpression | USING '(' identifier (',' identifier)* ')'
 
 对于from clause中的每个relation以逗号划分，类似于`from relation, relation, ...`；每个relation中通常会有join操作，因此把一个relation中的join操作映射为二叉树。传入join方法`ctx`的用于指明该Join操作的类型，是InnerJoin还是OuterJoin，其中NATURA-JOIN是一种特殊类型的EQUI-JOIN，当两张表的Join keys具有相同名字，并且对应的列数据类型相同。
 
-![From](C:\Users\wellfengzhu\Desktop\From.png)
+![From](From.png)
 
 
 
