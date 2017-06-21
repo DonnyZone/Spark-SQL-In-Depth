@@ -151,6 +151,7 @@ Analyzer的规则涉及到resolve Join的规则有：ResolveReferences和Resolve
 
 总而言之，Analyzer所起到的作用就是将一些catalog信息添加到Unresolved Logical Plan中，并对其进行若干的调整，例如加入别名信息(SubqueryAlias)等。经过这一步，最终的Logical Plan算子树如下：
 
+![LogicalPlan](LogicalPlan.png)
 
 
 
