@@ -123,6 +123,7 @@ joinCriteria : ON booleanExpression | USING '(' identifier (',' identifier)* ')'
   }
 ```
 经过递归调用，该SQL语句最终生成如下的算子树
+![unresolved](unresolved.png)
 
 1.3.2 生成Resolved Logical Plan
 
