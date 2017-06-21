@@ -122,6 +122,32 @@ joinCriteria : ON booleanExpression | USING '(' identifier (',' identifier)* ')'
     }
   }
 ```
+经过递归调用，该SQL语句最终生成如下的算子树
+
+1.3.2 生成Resolved Logical Plan
+
+Analyzer的规则涉及到resolve Join的规则有：ResolveReferences和ResolveNaturalAndUsingJoin。针对本例，解析流程对应的是ResolveReference中逻辑：
+
+    /**
+     * Generate a new logical plan for the right child with different expression IDs
+     * for all conflicting attributes.
+     */
+    private def dedupRight (left: LogicalPlan, right: LogicalPlan): LogicalPlan = {
+      val conflictingAttributes = left.outputSet.intersect(right.outputSet)
+      ......
+    }
+    
+    // ResolveReferences.apply
+    // If the projection list contains Stars, expand it.
+    case p: Project if containsStar(p.projectList) =>
+      p.copy(projectList = buildExpandedProjectList(p.projectList, p.child))
+    ...................................
+    case j @ Join(left, right, _, _) if !j.duplicateResolved =>
+      j.copy(right = dedupRight(left, right))
+
+根据该逻辑，如果Join操作存在重名的属性(即左右子节点的输出属性名集合有重叠)，那么就调用dedupRight方法将右子节点对应的Expression用一个新的Expression ID表示，这样即使出现同名，经过处理之后Expression ID也不相同，因此可以区分。
+
+总而言之，Analyzer所起到的作用就是将一些catalog信息添加到Unresolved Logical Plan中，并对其进行若干的调整，例如加入别名信息(SubqueryAlias)等。经过这一步，最终的Logical Plan算子树如下：
 
 
 
