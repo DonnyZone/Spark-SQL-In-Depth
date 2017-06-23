@@ -154,11 +154,155 @@ Analyzer的规则涉及到resolve Join的规则有：ResolveReferences和Resolve
 ![LogicalPlan](LogicalPlan.png)
 
 
+### 1.4 优化处理(Optimized Logical Plan)
 
+通过Optimizer来对逻辑算子树进行优化，对于这条语句，起作用的优化规则分别是：
 
+**EliminateSubqueryAliases**：消除别名
 
+```scala
+/**
+ * Removes [[SubqueryAlias]] operators from the plan. Subqueries are only required to provide
+ * scoping information for attributes and can be removed once analysis is complete.
+ */
+object EliminateSubqueryAliases extends Rule[LogicalPlan] {
+  def apply(plan: LogicalPlan): LogicalPlan = plan transformUp {
+    case SubqueryAlias(_, child, _) => child
+  }
+}
+```
 
+![EliminateAlias](EliminateAlias.png)
 
+**ColumnPruning**：列剪裁
 
+```scala
+object ColumnPruning extends Rule[LogicalPlan] {
+  private def sameOutput(output1: Seq[Attribute], output2: Seq[Attribute]): Boolean =
+    output1.size == output2.size &&
+      output1.zip(output2).forall(pair => pair._1.semanticEquals(pair._2))
 
+  def apply(plan: LogicalPlan): LogicalPlan = removeProjectBeforeFilter(plan transform {
+    // Prunes the unused columns from project list of Project/Aggregate/Expand
+    case p @ Project(_, p2: Project) if (p2.outputSet -- p.references).nonEmpty =>
+      p.copy(child = p2.copy(projectList = p2.projectList.filter(p.references.contains)))
+    case p @ Project(_, a: Aggregate) if (a.outputSet -- p.references).nonEmpty =>
+      p.copy(
+        child = a.copy(aggregateExpressions = a.aggregateExpressions.filter(p.references.contains)))
+    case a @ Project(_, e @ Expand(_, _, grandChild)) if (e.outputSet -- a.references).nonEmpty =>
+      val newOutput = e.output.filter(a.references.contains(_))
+      val newProjects = e.projections.map { proj =>
+        proj.zip(e.output).filter { case (_, a) =>
+          newOutput.contains(a)
+        }.unzip._1
+      }
+      a.copy(child = Expand(newProjects, newOutput, grandChild))
 
+    // Prunes the unused columns from child of `DeserializeToObject`
+    case d @ DeserializeToObject(_, _, child) if (child.outputSet -- d.references).nonEmpty =>
+      d.copy(child = prunedChild(child, d.references))
+
+    // Prunes the unused columns from child of Aggregate/Expand/Generate
+    case a @ Aggregate(_, _, child) if (child.outputSet -- a.references).nonEmpty =>
+      a.copy(child = prunedChild(child, a.references))
+    case e @ Expand(_, _, child) if (child.outputSet -- e.references).nonEmpty =>
+      e.copy(child = prunedChild(child, e.references))
+    case g: Generate if !g.join && (g.child.outputSet -- g.references).nonEmpty =>
+      g.copy(child = prunedChild(g.child, g.references))
+
+    // Turn off `join` for Generate if no column from it's child is used
+    case p @ Project(_, g: Generate)
+        if g.join && !g.outer && p.references.subsetOf(g.generatedSet) =>
+      p.copy(child = g.copy(join = false))
+
+    // Eliminate unneeded attributes from right side of a Left Existence Join.
+    case j @ Join(_, right, LeftExistence(_), _) =>
+      j.copy(right = prunedChild(right, j.references))
+
+    // all the columns will be used to compare, so we can't prune them
+    case p @ Project(_, _: SetOperation) => p
+    case p @ Project(_, _: Distinct) => p
+    // Eliminate unneeded attributes from children of Union.
+    case p @ Project(_, u: Union) =>
+      if ((u.outputSet -- p.references).nonEmpty) {
+        val firstChild = u.children.head
+        val newOutput = prunedChild(firstChild, p.references).output
+        // pruning the columns of all children based on the pruned first child.
+        val newChildren = u.children.map { p =>
+          val selected = p.output.zipWithIndex.filter { case (a, i) =>
+            newOutput.contains(firstChild.output(i))
+          }.map(_._1)
+          Project(selected, p)
+        }
+        p.copy(child = u.withNewChildren(newChildren))
+      } else {
+        p
+      }
+
+    // Prune unnecessary window expressions
+    case p @ Project(_, w: Window) if (w.windowOutputSet -- p.references).nonEmpty =>
+      p.copy(child = w.copy(
+        windowExpressions = w.windowExpressions.filter(p.references.contains)))
+
+    // Eliminate no-op Window
+    case w: Window if w.windowExpressions.isEmpty => w.child
+
+    // Eliminate no-op Projects
+    case p @ Project(_, child) if sameOutput(child.output, p.output) => child
+
+    // Can't prune the columns on LeafNode
+    case p @ Project(_, _: LeafNode) => p
+
+    // for all other logical plans that inherits the output from it's children
+    case p @ Project(_, child) =>
+      val required = child.references ++ p.references
+      if ((child.inputSet -- required).nonEmpty) {
+        val newChildren = child.children.map(c => prunedChild(c, required))
+        p.copy(child = child.withNewChildren(newChildren))
+      } else {
+        p
+      }
+  })
+```
+
+![cp](cp.png)
+
+**InferFiltersFromConstraints**：过滤条件相关
+
+```scala
+object InferFiltersFromConstraints extends Rule[LogicalPlan] with PredicateHelper {
+  def apply(plan: LogicalPlan): LogicalPlan = plan transform {
+    case filter @ Filter(condition, child) =>
+      val newFilters = filter.constraints --
+        (child.constraints ++ splitConjunctivePredicates(condition))
+      if (newFilters.nonEmpty) {
+        Filter(And(newFilters.reduce(And), condition), child)
+      } else {
+        filter
+      }
+
+    case join @ Join(left, right, joinType, conditionOpt) =>
+      // Only consider constraints that can be pushed down completely to either the left or the
+      // right child
+      val constraints = join.constraints.filter { c =>
+        c.references.subsetOf(left.outputSet) || c.references.subsetOf(right.outputSet)
+      }
+      // Remove those constraints that are already enforced by either the left or the right child
+      val additionalConstraints = constraints -- (left.constraints ++ right.constraints)
+      val newConditionOpt = conditionOpt match {
+        case Some(condition) =>
+          val newFilters = additionalConstraints -- splitConjunctivePredicates(condition)
+          if (newFilters.nonEmpty) Option(And(newFilters.reduce(And), condition)) else None
+        case None =>
+          additionalConstraints.reduceOption(And)
+      }
+      if (newConditionOpt.isDefined) Join(left, right, joinType, newConditionOpt) else join
+  }
+}
+```
+
+![filter](filter.png)
+
+**PushPredicateThroughJoin**：谓词下推
+
+![pushfilter](pushfilter.png)
