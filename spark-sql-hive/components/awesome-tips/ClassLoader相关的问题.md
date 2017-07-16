@@ -1,1 +1,0 @@
-BarrierClass需要load进来
