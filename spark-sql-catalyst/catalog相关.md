@@ -1,4 +1,0 @@
-顾名思义，Catalog就是管理数据库、表、函数以及视图相关的信息
-在Catalyst中，catalog主要有当前负责当前session的SessionCatalog，实际管理元数据的是ExternalCatlog类
-SessionCatlog构造会传入ExternalCatalog，它可以看作是ExternalCatalog的代理类，在Catalyst整个过程中都是通过SessionCatalog访问元数据
-
